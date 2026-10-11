@@ -17,11 +17,11 @@
 
 ## 仓内 preview MP3
 
-预览是 music_tools contributors 编写固定乐句、经对应引擎渲染的试听派生件，统一做逐段峰值归一化（-6 dBFS）、截断/淡入淡出/拼接及 MP3 编码；不是音色库本体，亦不代表上游背书。再分发时请同时保留本节与 [预览索引](<catalog/preview/INDEX.md>)，适用内容条款见上表。
+预览是 Scoreweft contributors 编写固定乐句、经对应引擎渲染的试听派生件，统一做逐段峰值归一化（-6 dBFS）、截断/淡入淡出/拼接及 MP3 编码；不是音色库本体，亦不代表上游背书。再分发时请同时保留本节与 [预览索引](<catalog/preview/INDEX.md>)，适用内容条款见上表。
 
 | 预览 | 来源 / 义务行 |
 |---|---|
-| [synth.mp3](<catalog/preview/synth.mp3>) | 本仓 synthlib 程序化合成；MIT，Copyright (c) 2026 music_tools contributors |
+| [synth.mp3](<catalog/preview/synth.mp3>) | 本仓 synthlib 程序化合成；MIT，Copyright (c) 2026 Scoreweft contributors |
 | [sf2_fluidr3.mp3](<catalog/preview/sf2_fluidr3.mp3>) | FluidR3 by Frank Wen (MIT)；保留本页完整 MIT 声明及来源 |
 | [sf2_generaluser.mp3](<catalog/preview/sf2_generaluser.mp3>) | GeneralUser GS by S. Christian Collins；GeneralUser GS License v2.0，许可边界与来源见上表 |
 | [sfz_vsco2_ce.mp3](<catalog/preview/sfz_vsco2_ce.mp3>) | VSCO 2 CE / Versilian Studios 及贡献者 (CC0)，无强制署名 |

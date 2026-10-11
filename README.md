@@ -1,4 +1,6 @@
-# music_tools —— 终端音乐/BGM 生产工具
+# Scoreweft —— 终端音乐/BGM 生产工具
+
+**名称**：Scoreweft（score 乐谱 + weft 纬线——把音符与音色织成音乐）。CLI 为 `bgm`、Python 包为 `bgm_gen`（BG-D1 契约不变）。
 
 **一句话**：工程=JSON、CLI=`bgm`、引擎插件化、确定性优先的终端音乐/BGM 生产工具链——程序化合成、采样音源、SF2/SFZ 乐器、AI 整段生成、分轨、母带、QC，全部无头驱动，乐谱即数据（可 diff、可 git、可复现）。
 
@@ -7,7 +9,7 @@
 ## 安装
 
 ```bash
-cd music_tools  # 进入克隆目录
+cd scoreweft  # 进入克隆目录
 python3 -m pip install -r requirements.txt  # numpy；pytest 仅开发/测试
 bash init.sh                               # 自检，不安装或启动模型/服务
 python3 -m bgm_gen --help                   # 无需个人 bgm 包装脚本
@@ -43,7 +45,7 @@ bgm catalog                                   # 音色目录（详表见 catalog
 bgm render examples/minimal.json -o out/try1  # 最小工程端到端：stems→混音→母带→QC
 
 # 测试（fast 档，默认 347 例——2026-10-11 开源整改后口径，预算 ≤90s；12 个显式 skip = 6 分家缺件 + 6 位级版本门（ffmpeg/fluidsynth 漂移，仅位级哈希断言段），见 bgm_gen/tests/README.md）
-cd music_tools  # 进入克隆目录
+cd scoreweft  # 进入克隆目录
 python3 -m pytest bgm_gen/tests -q
 ```
 
@@ -130,7 +132,7 @@ python3 -m pytest bgm_gen/tests -q
 
 ## 许可证与音色获取
 
-本仓原创代码和文档采用 [MIT](<LICENSE>)，Copyright (c) 2026 music_tools contributors。第三方预览与内容适用 [NOTICE](<NOTICE.md>)，不能仅据本仓 MIT 推断所有内容都可自由再分发。
+本仓原创代码和文档采用 [MIT](<LICENSE>)，Copyright (c) 2026 Scoreweft contributors。第三方预览与内容适用 [NOTICE](<NOTICE.md>)，不能仅据本仓 MIT 推断所有内容都可自由再分发。
 
 音色库、采样、乐谱与权重**不随仓分发**，`assets/`、`out/` 均 gitignored。请从官方源自行获取并核验当前条款：
 

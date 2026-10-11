@@ -9,7 +9,7 @@
 
 **文件**：`synth.mp3` · 时长 00:20.2 · 6 段
 
-**来源与义务**：自产 synthlib 程序化渲染；MIT，Copyright (c) 2026 music_tools contributors。
+**来源与义务**：自产 synthlib 程序化渲染；MIT，Copyright (c) 2026 Scoreweft contributors。
 
 | 起 | 乐器/段落 | 引擎 |
 |---|---|---|

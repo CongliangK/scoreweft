@@ -9,7 +9,7 @@
 
 ```bash
 # cwd 必须是工作区根（bgm_gen 的父目录：<仓库根>）
-cd music_tools  # 进入克隆目录
+cd scoreweft  # 进入克隆目录
 
 python3 -m pytest bgm_gen/tests -q                          # fast 档（默认，347 例，实测 ~67s；12 skip=6 分家缺件+6 位级版本门）
 python3 -m pytest bgm_gen/tests -q -m slow                  # GPU 引擎冒烟

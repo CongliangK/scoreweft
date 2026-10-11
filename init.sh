@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# music_tools 初始化脚本
+# Scoreweft 初始化脚本
 # 用途：新环境（新机 / 新 clone）快速就绪——基础依赖自检 + 大模型能力开启指引。
 # 约定：runtime.json 的唯一写入者是 `bgm doctor`（BG-D3），本脚本不代写、不改动任何配置。
 # 大模型策略：ComfyUI AI 引擎（ACE-Step/Music3）与 demucs 等 GPU 能力**默认关闭**——
@@ -13,7 +13,7 @@ ok()   { echo -e "  ${GREEN}[OK]${NC} $1"; }
 miss() { echo -e "  ${RED}[缺失]${NC} $1"; FAIL=1; }
 opt()  { echo -e "  ${YELLOW}[可选]${NC} $1"; }
 
-echo "=== music_tools init ==="
+echo "=== Scoreweft init ==="
 FAIL=0
 
 echo "--- 1/5 Python 与核心库（确定性引擎的硬底座）---"

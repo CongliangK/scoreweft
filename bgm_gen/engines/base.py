@@ -316,7 +316,7 @@ def load_runtime():
 # 注意：本文件在 bgm_gen/engines/ 下，须三层 dirname 才到仓库根
 #（R1 审查 MAJOR：两层只会到 bgm_gen/，缺省输出曾因此落进包内）
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))   # music_tools/
+    os.path.abspath(__file__))))   # scoreweft 仓库根/
 
 
 def default_out(*rel):

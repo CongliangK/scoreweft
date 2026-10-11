@@ -1,4 +1,4 @@
-# music_tools .gitignore（2026-08-22 自 bgm_gen/.gitignore 上移改写）
+# Scoreweft（music_tools 仓库）.gitignore（2026-08-22 自 bgm_gen/.gitignore 上移改写）
 # 原则：数据主权=工程 JSON 与代码入库；运行时探测、大音频产物、中间缓存不入库。
 
 # 运行时探测产物（唯一写入者=doctor，BG-D3）

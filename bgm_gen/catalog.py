@@ -19,7 +19,7 @@ import os
 from datetime import date
 
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))       # bgm_gen/
-_REPO_ROOT = os.path.dirname(_PKG_DIR)                      # music_tools/
+_REPO_ROOT = os.path.dirname(_PKG_DIR)                      # scoreweft 仓库根/
 
 AUDIO_EXT = (".ogg", ".wav", ".mp3", ".flac")
 

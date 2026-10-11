@@ -1,12 +1,12 @@
-# AGENTS.md · music_tools 工具宪法
+# AGENTS.md · Scoreweft 工具宪法
 
-> 本文件是 music_tools 仓库（终端音乐/BGM 生产工具）的**代理单一事实源**：内部决策、目录放置规则、迁移状态、坑表与遗留债务。新代理先读本文，再按指针深入。
-> 决策编号 **BG-D1..BG-D20**（D1-D10 搬运自 docs/PLAN.md §2；D11-D14 搬运自 docs/PLAN_v3.md §5；D15 为 v3 R4 仲裁新增；D16/D17 为 v3.2/v3.4 增量轮新增；D18 为 2026-08-25 产线转向新增；D19 为 2026-09-09 音色先行门新增；D20 为 2026-09-09 仓库分家新增）与上游视频项目的 D1-D17 相互独立（视频项目宪法：`<私有视频项目>/AGENTS.md` §六）。
-> 最后更新：2026-09-09（BG-D2 修正案：音色库 sf2/sfz/samples 真身迁入本仓 `assets/`（gitignored）+旧位置符号链接兼容层；同日早些时候 BG-D20 仓库分家、BG-D19 音色先行门）
+> 本文件是 Scoreweft 仓库（终端音乐/BGM 生产工具；本地开发目录名 music_tools，见 BG-D21）的**代理单一事实源**：内部决策、目录放置规则、迁移状态、坑表与遗留债务。新代理先读本文，再按指针深入。
+> 决策编号 **BG-D1..BG-D21**（D1-D10 搬运自 docs/PLAN.md §2；D11-D14 搬运自 docs/PLAN_v3.md §5；D15 为 v3 R4 仲裁新增；D16/D17 为 v3.2/v3.4 增量轮新增；D18 为 2026-08-25 产线转向新增；D19 为 2026-09-09 音色先行门新增；D20 为 2026-09-09 仓库分家新增；D21 为 2026-10-11 项目定名新增）与上游视频项目的 D1-D17 相互独立（视频项目宪法：`<私有视频项目>/AGENTS.md` §六）。
+> 最后更新：2026-10-11（BG-D21 项目定名 Scoreweft：对外名称/开源仓库名更名，CLI `bgm` 与包名 `bgm_gen` 不变；此前 2026-09-09 BG-D2 修正案/BG-D20/BG-D19）
 
 ---
 
-## 一、内部决策（BG-D1..BG-D20，权威记录；D1-D10 搬运自 docs/PLAN.md §2，D11-D15 为 v3 落档，D16-D17 为 v3 增量轮落档，D18 为产线转向落档，D19 为音色先行门落档，D20 为仓库分家落档）
+## 一、内部决策（BG-D1..BG-D21，权威记录；D1-D10 搬运自 docs/PLAN.md §2，D11-D15 为 v3 落档，D16-D17 为 v3 增量轮落档，D18 为产线转向落档，D19 为音色先行门落档，D20 为仓库分家落档，D21 为项目定名落档）
 
 - **BG-D1 CLI 名 `bgm`**：包目录 `bgm_gen/`（`__init__/__main__/cli.py`），入口 `python3 -m bgm_gen` + `~/.local/bin/bgm` 包装（钉 miniconda python3 + PYTHONPATH=本仓库根）。
 - **BG-D2 大资产放 `$MUSIC_ASSETS_ROOT/`**：manifest（`bgm_gen/assets.json`）存约定根相对路径 + 许可证 + sha256 + 下载源 URL；数据主权原则——工程=磁盘开放 JSON，人与 AI 等权读写、可 diff、可 git；引擎全部 CLI 无头驱动，云端/黑盒仅限 ComfyUI 本地服务。**修正案（2026-09-09，用户裁定"方便找到所有的东西"）：音色库三目录（sf2 31M/sfz 7.6G/samples 753M）真身迁入本仓 `assets/`（gitignored），`$MUSIC_ASSETS_ROOT/` 同名符号链接作兼容层——历史绝对路径（music_project 生成器/冻结 project.json 哈希锚点）零破坏照常解析；manifest 根相对路径与 assets_root（$MUSIC_ASSETS_ROOT，含 models/scores/tools 实体）不变**。
@@ -43,6 +43,10 @@
 以下 BG-D20 为 **仓库分家落档**（2026-09-09 用户裁定："尽可能保证工具本体的干净"）：
 
 - **BG-D20 工具/项目分仓（tool-project split）**：music_tools 只留**工具本体**——核心代码 `bgm_gen/`、理念与手册（AGENTS/README/docs 的 PLAN/PLAN_v3/PLAYBOOK/OMR_PROOFREADING/MIGRATION/USAGE）、`catalog/` 库编目（音色+乐谱源登记=共享基础设施）、通用工作流 14 件、`examples/` 仅存 `minimal.json`（测试锚点示例）与 `convert_openscore.py`（库批转器）；**一切具体项目案例迁姊妹仓 `<私有项目仓>/`**——项目生成器+溯源材料（examples 13 gen_*.py + fate/spring/tide_sym）、项目确定性回归测试（11 个 test 文件+适配版 helpers/conftest，跑法=cd music_project && pytest tests，bgm_gen 经 MUSIC_TOOLS_ROOT 导入）、项目文档（REPORT/REVIEW_LOG/PLAN_full_bgm/PLAN_spring_omr/PLAN_musicxml/idle_tasks 五任务书）、voice-ime 工作流四件、**全部产物 out/（135G 同盘 mv）**。配套：REPORT 工具级两节（§⑤ CLI 速查+§7.6/§8.5 署名义务）抽取为本仓 `docs/USAGE.md`；`out/minimal/` 锚点分家后即时重渲重建；工具仓测试缺口=缺件即 skip（test_smf_import/test_legacy 同口径）；内部 W1B 调用手册（未随开源版发布） 随 out/ 迁走（git 跟踪例外随之消灭）。**红线④"旧产物不删除"在分家中以"迁移不删除"履行**（全部 mv 原样落 music_project）。
+
+以下 BG-D21 为 **项目定名落档**（2026-10-11 用户裁定；开源前最后准备）：
+
+- **BG-D21 项目定名 Scoreweft**：对外项目名/GitHub 开源仓库名 = **Scoreweft**（score 乐谱 + weft 纬线——把音符与音色织成音乐；读作 score-weft）。候选 Notelith/Timbreloom 因既有使用痕迹（LoL 玩家名/Pinterest 用户、Suno 艺人名 timbreloom.com）否决；命名核验 2026-10-11：GitHub 仓库/用户搜索 0、PyPI/npm/crates.io 同名包均 404、scoreweft.com RDAP 404、Google 精确检索无同名音乐工具/品牌——口径为"未发现冲突"，**非正式商标清查**（中美欧 WIPO 商标库检索未做，如需法律级确权另行补查）。**CLI `bgm` 与包名 `bgm_gen` 维持不变**（BG-D1 契约、红线⑤、music_project 经 MUSIC_TOOLS_ROOT 导入零破坏）；本地开发目录名 music_tools 不改（姊妹仓绝对路径依赖），发布文档统一以 scoreweft 作克隆目录示例。同步更名面：README/LICENSE/NOTICE/init.sh 横幅/预览义务行（INDEX.md+make_timbre_previews.py 同步改，保再生一致）/"Scoreweft contributors" 版权署名；历史条目（BG-D20 及更早）中的 music_tools 表述按"迁移不删除"原则原样保留。
 
 **红线（docs/PLAN.md §0，不可违背）**：①BGM 产线仅用可商用许可（CC0/MIT/Apache/BSD/GeneralUser 类；CC-BY/Sonniss 系 2026-08-22 v2 提质轮经用户批准入白名单，禁 NC）；**SalamanderGrand 负 CC-BY 署名义务**（SalamanderGrand V3：archive.org/details/SalamanderGrandPianoV3）；**VPO 为自由使用许可**（用库制音乐完全自由含商用；再分发采样需按其分层许可署名 Paul Battersby，virtualplaying.com），成品署名仅作双保险——义务明细见 docs/USAGE.md §二（2026-09-09 分家自 REPORT §7.6/§8.5 抽取）；**v3 补记（2026-08-23）：命运底稿 Mutopia `Symphony5_1.mid`（Public Domain）入仓四要素封存**（URL + ID Mutopia-2017/11/05-941 + sha256 `0ce1bca9…df52046` + 取回 2026-08-23，2026-09-09 分家后见 `music_project/examples/fate/SOURCE.md`）；**三四乐章不存在许可干净机器源**（kernScores/CCARH=CC BY-NC-SA、IMSLP 合成板块=CC BY-NC 3.0、Project Gutenberg #156=Copyrighted、Musopen 无 MIDI——均排除）——全曲四乐章如需，须另行裁定人工录入路线（**2026-08-25 补注：缩谱+OMR 间接路线材料已备齐，见 REGISTRY §10**）；**乐谱源验收=REGISTRY §9 R-\* 白名单规则（BG-D18，2026-08-25）**；②不破坏 ComfyUI 环境（comfyui env 一律 --no-deps/独立 venv）；③sudo 最小化集中且存在完整免 sudo 替代路线；④旧产物不删除；⑤旧脚本 argv/cwd 行为冻结（ab_steps.py 依赖 gen.py 契约）。
 
@@ -87,7 +91,7 @@
 ## 四、测试与坑表
 
 ```bash
-cd music_tools  # 进入克隆目录
+cd scoreweft  # 进入克隆目录（本地开发目录名 music_tools 亦可）
 python3 -m pytest bgm_gen/tests -q            # fast 档（默认，347 例——2026-10-11 开源整改后口径，含位级版本门收窄），预算 ≤90s；12 个显式 skip = 6 分家缺件（fate mid×2/eden_v2×2/fate_mvt1/gm_lofi 旧产物，件在 music_project 可指回）+ 6 位级版本门（ffmpeg/fluidsynth 漂移仅门位级哈希断言段，契约/QC/harvest 静态一致性仍无条件执行，见 tests/README.md「位级基线与冻结版本」）
 python3 -m pytest bgm_gen/tests -q -m slow    # GPU 引擎冒烟（demucs/master）；位级复现锚点已随项目迁 music_project/tests
 python3 -m pytest bgm_gen/tests -q -m service # ComfyUI 依赖项（8188 不可达显式 skip，绝不静默当绿）
@@ -173,4 +177,4 @@ python3 -m pytest bgm_gen/tests -q -m service # ComfyUI 依赖项（8188 不可�
 | `<私有项目仓>/` | **项目案例仓（BG-D20 分家目标）**：docs/（REPORT 成品报告/REVIEW_LOG 审查史/PLAN_musicxml/PLAN_full_bgm/PLAN_spring_omr/idle_tasks 五任务书）+ examples/（项目生成器+溯源）+ tests/（项目回归测试）+ out/（全部成品 135G 含 LISTEN/PROOF）——索引见该仓 README.md |
 | `<私有资产配置文档>` | 上游 AI 资产宪法（ComfyUI/模型/H3 等，操作前先读对应项目节） |
 
-> 最后更新：2026-09-09（BG-D20 仓库分家：具体项目+项目测试+全部产物 out/ 迁 `<私有项目仓>/`，工具仓只留核心代码+理念文档+库编目（个人代理配置未发布），REPORT 工具级内容抽取 docs/USAGE.md；此前同日 BG-D19 音色先行门）
+> 最后更新：2026-10-11（BG-D21 项目定名 Scoreweft：对外名称/开源仓库名更名与文档同步，CLI `bgm` 与包名 `bgm_gen` 不变；此前 2026-09-09 BG-D20 仓库分家/BG-D19 音色先行门/BG-D2 修正案）

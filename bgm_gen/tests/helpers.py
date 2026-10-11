@@ -11,7 +11,7 @@ import subprocess
 
 # ---- 路径常量（绝对路径，测试不依赖 cwd） --------------------------------
 PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))      # bgm_gen/
-WORKSPACE = os.path.dirname(PKG_DIR)                                        # 仓库根（music_tools/）
+WORKSPACE = os.path.dirname(PKG_DIR)                                        # 仓库根（本地开发目录名 music_tools）
 OUT_DIR = os.path.join(WORKSPACE, "out")                                    # 产物根（仓库根/out）
 WORKFLOWS_DIR = os.path.join(WORKSPACE, "workflows")                        # ComfyUI 工作流
 EXAMPLES_DIR = os.path.join(WORKSPACE, "examples")                          # 示例工程

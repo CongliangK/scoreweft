@@ -35,7 +35,7 @@ BUILD_DIR = os.path.join(REPO, "out", "preview_build")
 from bgm_gen.paths import assets_root, local_runtime, samples_root  # noqa: E402
 
 ATTRIBUTIONS = {
-    "synth": "自产 synthlib 程序化渲染；MIT，Copyright (c) 2026 music_tools contributors。",
+    "synth": "自产 synthlib 程序化渲染；MIT，Copyright (c) 2026 Scoreweft contributors。",
     "sf2_fluidr3": "FluidR3 by Frank Wen (MIT) — https://www.fluidsynth.org/soundfonts/；完整版权与许可声明见 [NOTICE](<../../NOTICE.md>)。",
     "sf2_generaluser": "GeneralUser GS by S. Christian Collins (GeneralUser GS License v2.0) — https://schristiancollins.com/generaluser.php；音乐使用许可与源样本边界见 [NOTICE](<../../NOTICE.md>)。",
     "sfz_vsco2_ce": "VSCO 2 CE / Versilian Studios 及贡献者 (CC0) — https://github.com/sgossner/VSCO-2-CE/tree/SFZ；无强制署名。",
