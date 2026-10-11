@@ -1,0 +1,43 @@
+# music_tools .gitignore（2026-08-22 自 bgm_gen/.gitignore 上移改写）
+# 原则：数据主权=工程 JSON 与代码入库；运行时探测、大音频产物、中间缓存不入库。
+
+# 运行时探测产物（唯一写入者=doctor，BG-D3）
+bgm_gen/runtime.json
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# out/ 全部忽略（简单起见，BG-D9 产物均可由工程/spec 复现）：
+#  - out/<project>/（mix.flac / stems / qc.json 等渲染产物）
+#  - out/smoke/（各引擎冒烟音频与 spec 快照，可由 tests/baselines_*.json + 命令重生成）
+out/
+
+# 防御：即使 REPO_ROOT 推导回归，包内 out/ 也不入库（R1 审查）
+bgm_gen/out/
+
+# ab_steps.py 在仓库根跑时的 cwd 中间产物（锚定根目录：workflows/ 下有意入库的同名文件不受影响）
+/wf_ab_*.json
+
+# asendcmd 自动化命令脚本（混音中间产物，随 out/ 生命周期）
+sendcmd_*.txt
+
+# v3 双布局/增量渲染（PLAN_v3 §3.3/§3.4）：undo 快照栈与 stem 渲染边车
+#（防御性——边车本在 out/ 下；.bgm_undo/ 为 WP3 undo 快照栈预留）
+**/.bgm_undo/
+**/*.render.json
+
+# v3 R3 编辑层：$ref 再校验的瞬态镜像目录（R3 审查 n-3，崩溃残留防垃圾入库）
+**/.bgm_val_*/
+
+# 编辑器工作区配置（2026-09-09 收编整理）
+.obsidian/
+
+# 音色库真身（2026-09-09 BG-D2 修正案：sf2/sfz/samples 迁入仓库目录便于统一查找，
+# git 排除；资产根由 MUSIC_ASSETS_ROOT 或 runtime.json 配置）
+assets/
+
+# 开源版不发布内部取证快照与个人代理配置，防止回填
+/docs/archive/
+/skill/
