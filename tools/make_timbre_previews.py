@@ -13,16 +13,73 @@
 - 确定性：引擎逐位确定；ffmpeg 解码/编码（f32le / libmp3lame 160k）同版本确定
   ——整脚本可重跑再生成（中间件落 out/preview_build/，gitignored）。
 
-用法：python3 tools/make_timbre_previews.py [--only <slug>]
-（--only 只重生成指定库，slug 见 PREVIEWS 键）
+用法（标准 argparse，--help 查看全部参数与前置说明）：
+    python3 tools/make_timbre_previews.py                # 全量再生（先打印计划摘要）
+    python3 tools/make_timbre_previews.py --only synth   # 只再生指定预览件（slug 见 PREVIEWS 键）
+    python3 tools/make_timbre_previews.py --dry-run      # 只列出将再生的件与段数，不写盘
+
+并发：BUILD/输出目录均使用 .make_timbre_previews.lock；存在即拒绝启动，
+不支持并发。正常结束或 Ctrl-C 自动释放；崩溃残留锁须确认无生成进程后手动删除。
+
+**向后兼容**：无参数调用 = 全量再生，行为与旧版一致；启动时先打印执行
+计划摘要（件数/段数/目标/量级）再干活，误触发可感知。
 """
 
+import argparse
 import os
 import subprocess
 import sys
 import wave
+import tempfile
+import re
+from contextlib import contextmanager, ExitStack
 
 import numpy as np
+
+
+def _configure_streams():
+    # ASCII locale 下中文可转义，避免提示本身导致崩溃（Python 3.7+）。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+@contextmanager
+def _atomic_path(target):
+    """同目录临时件；成功后原子替换，中断/失败保留旧件并清理临时件。"""
+    target = os.path.abspath(target)
+    fd, temporary = tempfile.mkstemp(prefix=".scoreweft-", suffix=os.path.splitext(target)[1],
+                                     dir=os.path.dirname(target))
+    try:
+        os.close(fd)
+        yield temporary
+        os.replace(temporary, target)
+    finally:
+        # temporary 来自 mkstemp 的已知绝对路径，不删除最终产物。
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+@contextmanager
+def _directory_lock(directory, name):
+    """不支持并发；保守拒绝既有锁（包括崩溃残留锁），不自动回收。"""
+    path = os.path.join(os.path.abspath(directory), name)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise RuntimeError(f"目标目录已锁定，不支持并发：{path}；"
+                           "请等待另一进程结束；若为残留锁，确认无生成进程后手动删除该锁。") from None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"pid={os.getpid()}\n")
+        yield
+    finally:
+        os.unlink(path)
+
+
+_configure_streams()
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -64,7 +121,7 @@ def _ffmpeg(args, *, data=None):
     r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error"] + args,
                        capture_output=True, input=data)
     if r.returncode != 0:
-        raise RuntimeError(f"ffmpeg 失败：{' '.join(args[:6])}…\n{r.stderr.decode()[:400]}")
+        raise RuntimeError(f"ffmpeg 失败：{' '.join(args[:6])}…\n{r.stderr.decode('utf-8', errors='replace')[:400]}")
     return r.stdout
 
 
@@ -72,7 +129,7 @@ def render_snippet(name, engine, payload):
     """引擎渲染一段 → 立体声 float64 数组。"""
     spec = {"engine": engine, "spec_version": "1", "sr": SR,
             "out": os.path.join(BUILD_DIR, f"{name}.wav"), "payload": payload}
-    rt = local_runtime()
+    rt = _load_runtime()
     rt["assets_root"] = assets_root(rt)
     rt["samples_root"] = samples_root(rt)
     # 任何成功解析出的 sf2 根（env > runtime > 仓库 assets/ fallback）都注入默认
@@ -81,7 +138,8 @@ def render_snippet(name, engine, payload):
     if os.path.isfile(generaluser):
         rt["sf2"] = dict(rt.get("sf2") or {})
         rt["sf2"]["GeneralUser_GS"] = generaluser
-    run_engine(spec, runtime=rt)
+    with _atomic_path(spec["out"]) as temporary:
+        run_engine(dict(spec, out=temporary), runtime=rt)
     raw = _ffmpeg(["-i", spec["out"], "-f", "f32le", "-ac", "2", "-ar", str(SR), "-"])
     x = np.frombuffer(raw, dtype="<f4").astype(np.float64).reshape(-1, 2)
     return x
@@ -131,11 +189,16 @@ def first_files(directory, suffix, count):
 
 
 # ---- Kenney 盘点（环境变量或既有 runtime.json；缺件跳过） ----------------
-SAMPLES_ROOT = samples_root()
-KENNEY_ROOT = os.path.join(SAMPLES_ROOT, "_raw", "kenney")
+def _load_runtime():
+    rt = local_runtime()
+    if not isinstance(rt, dict):
+        raise ValueError("runtime.json 须为 JSON 对象，不能是 null 或数组")
+    return rt
 
 
 def build_previews():
+    sample_root = samples_root(_load_runtime())
+    kenney_root = os.path.join(sample_root, "_raw", "kenney")
     previews = []  # (slug, 标题, [entry…])；entry=(label, engine, payload)
 
     # ① synth（synthlib 六音色全览）
@@ -229,15 +292,15 @@ def build_previews():
 
     # ⑧ Kenney 采样包（每包 3 发）
     entries = []
-    if os.path.isdir(KENNEY_ROOT):
-        for pack in sorted(d for d in os.listdir(KENNEY_ROOT)
-                           if d.startswith("kenney_") and os.path.isdir(os.path.join(KENNEY_ROOT, d))):
-            audio = os.path.join(KENNEY_ROOT, pack, "Audio")
+    if os.path.isdir(kenney_root):
+        for pack in sorted(d for d in os.listdir(kenney_root)
+                           if d.startswith("kenney_") and os.path.isdir(os.path.join(kenney_root, d))):
+            audio = os.path.join(kenney_root, pack, "Audio")
             if not os.path.isdir(audio):          # 少数包无 Audio/ 子目录（如 voiceover-pack）
-                audio = os.path.join(KENNEY_ROOT, pack)
+                audio = os.path.join(kenney_root, pack)
             files = first_files(audio, ".ogg", 3)
             if files:
-                rel = [os.path.relpath(f, SAMPLES_ROOT) for f in files]
+                rel = [os.path.relpath(f, sample_root) for f in files]
                 hits = [decode_hit(r, 0.8 * i, -6) for i, r in enumerate(rel)]
                 entries.append((f"{pack[len('kenney_'):]}（3 发代表件）", "sample",
                                 {"hits": hits, "length_s": 0.8 * len(files) + 1.2}))
@@ -254,19 +317,110 @@ def mmss(t):
     return f"{int(t // 60):02d}:{t % 60:04.1f}"
 
 
-def main(argv):
-    only = argv[argv.index("--only") + 1] if "--only" in argv else None
+class _ZhArgumentParser(argparse.ArgumentParser):
+    """参数错误 → 稳定中文提示 + exit 2（不裸 traceback）。"""
+
+    def error(self, message):
+        zh = (message
+              .replace("unrecognized arguments: ", "存在无法识别的参数：")
+              .replace("expected one argument", "该参数后面需要一个值")
+              .replace("argument ", "参数 "))
+        self.print_usage(sys.stderr)
+        print(f"错误：{zh}", file=sys.stderr)
+        print("用法详见 --help。", file=sys.stderr)
+        sys.exit(2)
+
+
+def _parse_args(argv=None):
+    p = _ZhArgumentParser(
+        prog="python3 tools/make_timbre_previews.py",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "逐音色库再生「典型音色串烧」试听 MP3：catalog/preview/<slug>.mp3（每库一件）\n"
+            "+ INDEX.md（时间码索引表，同步再生成）。\n"
+            "\n"
+            "预览声一律经 bgm_gen 真实引擎渲染（synth/sf2/sfz/sample），与产线同源、\n"
+            "可确定性重跑再生成。\n"
+            "\n"
+            "无参数 = 全量再生（与旧版行为一致）；启动时先打印执行计划摘要\n"
+            "（件数/段数/目标/量级）再干活。"
+        ),
+        epilog=(
+            "前置：assets/ 音色库（符号链接真身）与 runtime.json 已就位、ffmpeg 可用\n"
+            "（缺件的段落逐段跳过并在索引披露；一件都没有再生成功则中文报错 exit 1，\n"
+            "INDEX.md 保持不动）。中间件落 out/preview_build/（gitignored）。"
+        ),
+    )
+    p.add_argument("--only", metavar="SLUG", default=None,
+                   help="只再生指定预览件（slug 如 synth / sf2_fluidr3 / sfz_vpo / sample_kenney；"
+                        "可用值随本机资产自动增减，传错将列出可用值并以 exit 2 退出）")
+    p.add_argument("--dry-run", action="store_true",
+                   help="只列出将再生的预览件与段数；不渲染、不写盘、不改 INDEX.md")
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    if argv and argv[0].endswith(".py"):     # 兼容旧式 main(sys.argv) 传参
+        argv = argv[1:]
+    args = _parse_args(argv)
+
+    previews = build_previews()
+    slugs = [slug for slug, _title, _entries in previews]
+    if args.only is not None and args.only not in slugs:
+        print(f"错误：--only {args.only} 不是有效预览件。", file=sys.stderr)
+        print(f"可用值（{len(slugs)} 个）：{'、'.join(slugs)}", file=sys.stderr)
+        return 2
+    todo = [pv for pv in previews if args.only is None or pv[0] == args.only]
+    n_segs = sum(len(entries) for _slug, _title, entries in todo)
+    scope = (f"--only {args.only}（其余件不动）" if args.only is not None
+             else "全量（同时重写 INDEX.md）")
+    print(f"[计划] 将再生 {len(todo)} 件预览 MP3、共 {n_segs} 段引擎渲染，模式：{scope}",
+          file=sys.stderr)
+    print(f"[计划] 输出目录 {OUT_DIR}；预计几十秒量级（本机实测 8 件 67 段约 23 秒，视库与机器而定）",
+          file=sys.stderr)
+    if args.dry_run:
+        for slug, title, entries in todo:
+            print(f"[dry-run] {slug}.mp3 <- {title}（{len(entries)} 段）")
+        print(f"[dry-run] 共 {len(todo)} 件 / {n_segs} 段；未渲染、未写任何文件")
+        return 0
+
     os.makedirs(BUILD_DIR, exist_ok=True)
     os.makedirs(OUT_DIR, exist_ok=True)
+    with ExitStack() as stack:
+        for directory in sorted({os.path.abspath(BUILD_DIR), os.path.abspath(OUT_DIR)}):
+            stack.enter_context(_directory_lock(directory, ".make_timbre_previews.lock"))
+        return _generate(todo, args.only)
+
+
+def _merge_index(existing, selected, slug):
+    """精确识别二级库 section 与唯一文件行；只替换选中的完整 section。"""
+    parts = re.split(r"(?m)(?=^## )", existing)
+    if not parts[0].startswith("# catalog/preview") or len(parts) < 2:
+        raise ValueError("索引标题或库 section 缺失")
+    seen = set()
+    for i in range(1, len(parts)):
+        matches = re.findall(r"(?m)^\*\*文件\*\*：`([^`]+)\.mp3`", parts[i])
+        if len(matches) != 1 or matches[0] in seen:
+            raise ValueError("库 section 的文件标识缺失或重复")
+        seen.add(matches[0])
+        if matches[0] == slug:
+            parts[i] = selected
+    if slug not in seen:
+        if not parts[-1].endswith("\n"):
+            parts.append("\n")
+        parts.append(selected)
+    return "".join(parts)
+
+
+def _generate(todo, only):
     index_rows = ["# catalog/preview —— 音色库试听预览索引", "",
                   "> 由 `tools/make_timbre_previews.py` 生成（引擎真实渲染，重跑确定性再生）。",
                   "> **逐段峰值归一化（-6 dBFS）**：库间原始电平差异已被抹平（如 VSCO2 电平缺陷族），",
                   "> 电平补偿请查 [../timbres.md](../timbres.md)。每行=一个乐器，时间码可直接拖动播放。",
                   PREVIEW_NOTICE, ""]
 
-    for slug, title, entries in build_previews():
-        if only and slug != only:
-            continue
+    n_ok = 0
+    for slug, title, entries in todo:
         chunks, rows, t = [], [], 0.0
         for i, (label, engine, payload) in enumerate(entries):
             try:
@@ -286,20 +440,49 @@ def main(argv):
         mix = np.vstack(chunks)
         pcm = (np.clip(mix, -1, 1) * 32767).astype("<i2")
         wav_p = os.path.join(BUILD_DIR, f"{slug}_master.wav")
-        with wave.open(wav_p, "wb") as w:
-            w.setnchannels(2), w.setsampwidth(2), w.setframerate(SR)
-            w.writeframes(pcm.tobytes())
+        with _atomic_path(wav_p) as temporary:
+            with wave.open(temporary, "wb") as w:
+                w.setnchannels(2), w.setsampwidth(2), w.setframerate(SR)
+                w.writeframes(pcm.tobytes())
         mp3_p = os.path.join(OUT_DIR, f"{slug}.mp3")
-        _ffmpeg(["-i", wav_p, "-codec:a", "libmp3lame", "-b:a", "160k", "-y", mp3_p])
+        with _atomic_path(mp3_p) as temporary:
+            _ffmpeg(["-i", wav_p, "-codec:a", "libmp3lame", "-b:a", "160k", "-y", temporary])
         index_rows += [f"## {title}", "", f"**文件**：`{slug}.mp3` · 时长 {mmss(t)} · {len(chunks)} 段", "",
                        "**来源与义务**：" + ATTRIBUTIONS[slug], "",
                        "| 起 | 乐器/段落 | 引擎 |", "|---|---|---|"] + rows + [""]
+        n_ok += 1
         print(f"[ok] {slug}.mp3  {mmss(t)}  {len(chunks)} 段")
 
-    with open(os.path.join(OUT_DIR, "INDEX.md"), "w", encoding="utf-8") as f:
-        f.write("\n".join(index_rows) + "\n")
+    if n_ok == 0:
+        print("错误：没有任何预览再生成功（音色资产或引擎不可用），INDEX.md 未改动。",
+              file=sys.stderr)
+        print("请先运行 bgm doctor 核对 assets/ 符号链接、runtime.json 与 ffmpeg/引擎后端。",
+              file=sys.stderr)
+        return 1
+    index_path = os.path.join(OUT_DIR, "INDEX.md")
+    text = "\n".join(index_rows) + "\n"
+    if only is not None:
+        try:
+            with open(index_path, encoding="utf-8") as f:
+                existing = f.read()
+            selected = text[text.index("## "):]
+            text = _merge_index(existing, selected, only)
+        except (OSError, ValueError) as e:
+            print(f"警告：既有 INDEX.md 缺失、不可读或结构不符（{e}）；"
+                  "回退为仅写选中件索引，无法保留其他库段落。", file=sys.stderr)
+    with _atomic_path(index_path) as temporary:
+        with open(temporary, "w", encoding="utf-8") as f:
+            f.write(text)
     print("索引 → catalog/preview/INDEX.md")
+    return 0
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\n已中止（用户中断）；临时文件已清理，既有产物未被截断。", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:  # 绝不裸 traceback：稳定中文提示 + exit 1
+        print(f"错误：{type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)

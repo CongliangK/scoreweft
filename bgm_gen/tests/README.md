@@ -11,7 +11,7 @@
 # cwd 必须是工作区根（bgm_gen 的父目录：<仓库根>）
 cd scoreweft  # 进入克隆目录
 
-python3 -m pytest bgm_gen/tests -q                          # fast 档（默认，347 例，实测 ~67s；12 skip=6 分家缺件+6 位级版本门）
+python3 -m pytest bgm_gen/tests -q                          # fast 档（约 376 例；2026-10-12 实测 364 passed / 12 skipped，~70s；以当次摘要为准）
 python3 -m pytest bgm_gen/tests -q -m slow                  # GPU 引擎冒烟
 python3 -m pytest bgm_gen/tests -q -m service               # ComfyUI 依赖项
 python3 -m pytest bgm_gen/tests -q -m "fast or slow or service"   # 真全量三档
@@ -25,6 +25,35 @@ python3 -m pytest bgm_gen/tests -q -m "fast or slow or service"   # 真全量三
 
 > \* slow 实测含 ~120s BG-D8 显存闸等待（ComfyUI 常驻占 91% 显存时，demucs
 > auto 档等待/降级 CPU 属设计行为）；显存空闲时本档 ~30s。
+
+## fresh clone 首跑前置（三步，顺序固定）
+
+fast 档基线（`baselines_w2a.json`）按指针读取
+`out/smoke/{synth,sf2,sfz,sample,master}/spec_*.json`，slow 档还需
+`out/smoke/demucs/demucs_in10s.wav`——这些件与 minimal 锚点一样 gitignored
+不随 clone 分发。fresh clone（或清空 out/ 后）首跑按固定顺序补齐：
+
+```bash
+# ① 重建 smoke 证据件：8 份引擎 spec 模板 + demucs/master 两件输入 wav
+#    （spec 与开发树规范件同源；wav 纯 numpy 确定性生成；缺资产时逐条
+#     打印「缺什么/在哪/怎么办」并以 exit 1 退出，不写半成品）
+python3 tools/make_smoke_specs.py
+
+# ② 渲染 minimal 锚点（test_cli 的 mix.flac sha 依赖）
+python3 -m bgm_gen render examples/minimal.json -o out/minimal
+
+# ③ 跑测试
+python3 -m pytest bgm_gen/tests -q
+```
+
+要点：①产出的 spec 路径全部可移植（sfz/sf2/sample 保持相对引用由
+runtime.json 解析；master 的 `payload.input` 写生成目录的绝对路径——引擎
+对该字段无相对解析）；`master_in_sine.wav` 与开发树规范件**逐字节一致**
+（钉版本 ffmpeg 下 master 位级输出锚点不受影响）；`demucs_in10s.wav` 为
+synthlib 合成的等价器乐小样（历史件=legacy gm_lofi demo 截 10s，slow 档
+对它只断言 stem RMS 下限与 loudnorm LUFS 目标，无位级锚点）。跳过①的
+表现=fast 档 9 failed（8 条基线读不到 spec + 重组装深比较锁）、slow 档
+2 failed（demucs/master 输入缺失）。
 
 ## 三档语义与 skip 记账
 
@@ -63,9 +92,11 @@ sf2 基线 = fluidsynth+ffmpeg 门、master 基线 = ffmpeg 门；synth/sample/s
 
 ## 前置服务清单（不依赖外网）
 
-1. **fast/slow**：近零前置——唯一例外：test_cli 的 sha 锚点依赖
-   `out/minimal/mix.flac`（仓库根 out/，被 .gitignore），**新机/清空 out 后首跑需先
-   `bgm render examples/minimal.json -o out/minimal` 生成锚点**。
+1. **fast/slow**：近零前置——例外是两件 gitignored 证据件：test_cli 的 sha
+   锚点依赖 `out/minimal/mix.flac`，基线指针依赖 `out/smoke/` 的 spec 与
+   demucs 输入（见上节「fresh clone 首跑前置」三步：
+   `python3 tools/make_smoke_specs.py` → `python3 -m bgm_gen render
+   examples/minimal.json -o out/minimal` → pytest）。
    权重已离线缓存（`HF_HUB_OFFLINE=1` 路径已验证）；
    ffmpeg/fluidsynth/sfizz 由 `bgm_gen/runtime.json` 指向本地路径。
 2. **service**：ComfyUI 常驻 `http://127.0.0.1:8188`（`按 ComfyUI 官方说明启动本地服务`，
@@ -142,4 +173,6 @@ python3 bgm_gen/doctor.py            # 人读绿红表（默认；可选档有�
 python3 bgm_gen/doctor.py --json     # 原 JSON（与 doctor_report() 逐字段一致）
 ```
 
-exit 0=必检项全过；1=有 ✗（与 JSON 的 ok 字段一致）。
+exit 0=必检项全过；1=非 optional 的 error 项失败（与 JSON 的 ok 字段一致），warn 黄灯不阻断。
+
+配置缺失/坏 JSON/顶层非对象均返回标准单条 error 和重新复制模板的指引，不自动建档。路径中保留 `<…>` 占位或 demucs/matchering 解释器不存在会报 error；已配置的 HF_HOME 目录不存在报 warn。新增隔离回归见 [test_doctor_robust.py](<test_doctor_robust.py>)（28 例 fast，临时文件 + monkeypatch，不改真实 runtime）；doctor 专项运行 `python3 -m pytest bgm_gen/tests -q -k doctor`。

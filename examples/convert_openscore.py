@@ -18,11 +18,17 @@ tests/test_musicxml_import.py L3 roundtrip 共用本写出层。
     - **残留交叠降级**：同 (voice,pitch) onset<off 冲突 → 冲突音追加
       溢出 channel（找同 pitch 无 span 冲突者）；无余量 → 件级 skip。
 
-用法：
-    python3 examples/convert_openscore.py            # 全量批转（两库）
-    python3 examples/convert_openscore.py --limit 5  # 冒烟
+用法（标准 argparse，--help 查看全部参数与前置说明）：
+    python3 examples/convert_openscore.py                     # 全量批转（两库；先打印计划摘要）
+    python3 examples/convert_openscore.py --limit 5           # 只转前 5 件（跨库截取，试跑）
+    python3 examples/convert_openscore.py --limit 5 --dry-run # 只列出将处理的文件，不写盘
+    python3 examples/convert_openscore.py --out <目录>        # 覆盖 MIDI 输出根目录（默认不变）
+
+**向后兼容**：无参数调用 = 全量批转，行为与旧版一致（既有人脚本依赖面）；
+启动时先打印执行计划摘要（件数/目标/量级）再干活，误触发可感知。
 """
 
+import argparse
 import json
 import os
 import sys
@@ -39,12 +45,27 @@ from bgm_gen.engines.midi_util import Trk, write_smf             # noqa: E402
 
 from bgm_gen.paths import assets_root                         # noqa: E402
 
-SCORES_ROOT = os.path.join(assets_root(), "scores")
-LIBS = {
-    "lieder": os.path.join(SCORES_ROOT, "openscore-lieder", "scores"),
-    "sq": os.path.join(SCORES_ROOT, "openscore-stringquartets", "scores"),
-}
-OUT_ROOT = os.path.join(SCORES_ROOT, "openscore-midi")
+def _configure_streams():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+_configure_streams()
+
+
+def _score_paths():
+    # 参数解析之后才读配置；import 写出层与 --help 均零配置依赖。
+    from bgm_gen.paths import local_runtime
+    rt = local_runtime()
+    if not isinstance(rt, dict):
+        raise ValueError("runtime.json 须为 JSON 对象，不能是 null 或数组")
+    root = os.path.join(assets_root(rt), "scores")
+    libs = {"lieder": os.path.join(root, "openscore-lieder", "scores"),
+            "sq": os.path.join(root, "openscore-stringquartets", "scores")}
+    return root, libs, os.path.join(root, "openscore-midi")
 PPQ_CAP = 100000
 VEL = 64
 
@@ -197,52 +218,162 @@ def _warn_stats(parsed):
     return stats
 
 
-def batch(limit=None, out_root=OUT_ROOT, libs=None):
-    """两库全量批转 + inventory（R3 产出清单；警告逐类计数披露）。"""
-    libs = libs or LIBS
-    inv = []
+def _enumerate_libs(libs):
+    """两库 .mxl 全量枚举 → {lib: [排序后路径]}（lib 名序 × 路径序，确定性）。
+
+    与批转/试跑/计划摘要共用同一枚举，保证"列出的=将处理的"。
+    """
+    out = {}
     for lib, root in sorted(libs.items()):
         files = []
         for dirpath, _dirs, fs in os.walk(root):
-            for f in sorted(fs):
+            for f in fs:
                 if f.endswith(".mxl"):
                     files.append(os.path.join(dirpath, f))
         files.sort()
-        if limit:
-            files = files[:limit]
-        for src in files:
-            rel = os.path.relpath(src, root)
-            dst = os.path.join(out_root, lib, os.path.splitext(rel)[0] + ".mid")
-            rec = {"lib": lib, "src": src, "dst": dst, "status": "ok"}
-            try:
-                parsed, ev = convert_one(src, dst)
-                rec.update({
-                    "n_parts": parsed["meta"]["n_parts"],
-                    "n_measures": parsed["meta"]["n_measures"],
-                    "bpm": parsed["meta"]["bpm"],
-                    "notes": sum(len(p["notes"]) for p in parsed["parts"]),
-                    "n_grace_dropped": sum(p["n_grace"] for p in parsed["parts"]),
-                    "n_cue_dropped": sum(p["n_cue"] for p in parsed["parts"]),
-                    "ppq": ev["ppq"], "quantized": ev["quantized"],
-                    "n_overlap_moved": ev["n_overlap_moved"],
-                    "n_channels": ev["n_channels"],
-                    "has_repeat": parsed["meta"]["has_repeat"],
-                    "has_ending": parsed["meta"]["has_ending"],
-                    "warn": _warn_stats(parsed),
-                })
-            except (MusicXmlImportError, ChannelOverflow) as e:
-                rec["status"] = "skip"
-                rec["error"] = str(e)
-            inv.append(rec)
-            print(f"[{rec['status']}] {rel}", file=sys.stderr)
+        out[lib] = files
+    return out
+
+
+def batch(limit=None, out_root=None, libs=None, dry_run=False):
+    """两库批转 + inventory（R3 产出清单；警告逐类计数披露）。
+
+    limit=跨库取前 N 件（lib 名序 × 路径序）；dry_run=True 只列出不写盘。
+    """
+    if libs is None or out_root is None:
+        _root, default_libs, default_out = _score_paths()
+        libs = default_libs if libs is None else libs
+        out_root = default_out if out_root is None else out_root
+    pairs = [(lib, src) for lib, srcs in _enumerate_libs(libs).items()
+             for src in srcs]
+    if limit:
+        pairs = pairs[:limit]
+    inv = []
+    for lib, src in pairs:
+        root = libs[lib]
+        rel = os.path.relpath(src, root)
+        dst = os.path.join(out_root, lib, os.path.splitext(rel)[0] + ".mid")
+        if dry_run:
+            inv.append({"lib": lib, "src": src, "dst": dst, "status": "dry-run"})
+            print(f"[dry-run] {lib}/{rel} -> {dst}")
+            continue
+        rec = {"lib": lib, "src": src, "dst": dst, "status": "ok"}
+        try:
+            parsed, ev = convert_one(src, dst)
+            rec.update({
+                "n_parts": parsed["meta"]["n_parts"],
+                "n_measures": parsed["meta"]["n_measures"],
+                "bpm": parsed["meta"]["bpm"],
+                "notes": sum(len(p["notes"]) for p in parsed["parts"]),
+                "n_grace_dropped": sum(p["n_grace"] for p in parsed["parts"]),
+                "n_cue_dropped": sum(p["n_cue"] for p in parsed["parts"]),
+                "ppq": ev["ppq"], "quantized": ev["quantized"],
+                "n_overlap_moved": ev["n_overlap_moved"],
+                "n_channels": ev["n_channels"],
+                "has_repeat": parsed["meta"]["has_repeat"],
+                "has_ending": parsed["meta"]["has_ending"],
+                "warn": _warn_stats(parsed),
+            })
+        except (MusicXmlImportError, ChannelOverflow) as e:
+            rec["status"] = "skip"
+            rec["error"] = str(e)
+        inv.append(rec)
+        print(f"[{rec['status']}] {rel}", file=sys.stderr)
     return inv
 
 
-def main():
-    limit = None
-    if "--limit" in sys.argv:
-        limit = int(sys.argv[sys.argv.index("--limit") + 1])
-    inv = batch(limit=limit)
+class _ZhArgumentParser(argparse.ArgumentParser):
+    """参数错误 → 稳定中文提示 + exit 2（不裸 traceback）。"""
+
+    def error(self, message):
+        zh = (message
+              .replace("unrecognized arguments: ", "存在无法识别的参数：")
+              .replace("expected one argument", "该参数后面需要一个值")
+              .replace("argument ", "参数 "))
+        self.print_usage(sys.stderr)
+        print(f"错误：{zh}", file=sys.stderr)
+        print("用法详见 --help。", file=sys.stderr)
+        sys.exit(2)
+
+
+def _positive_int(s):
+    try:
+        v = int(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"须为正整数，收到 {s!r}")
+    if v < 1:
+        raise argparse.ArgumentTypeError(f"须为 ≥1 的正整数，收到 {v}")
+    return v
+
+
+def _parse_args(argv=None):
+    p = _ZhArgumentParser(
+        prog="python3 examples/convert_openscore.py",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "openscore 双库 .mxl → MIDI 批量转换器（读器 bgm_gen/core/musicxml_import.py，\n"
+            "写出层契约见 docs/PLAN_musicxml.md §三）。\n"
+            "\n"
+            "无参数 = 全量批转（两库全部 .mxl，历史实测 1584 件约 2 分钟），\n"
+            "行为与旧版一致；启动时先打印执行计划摘要（件数/目标/量级）再干活。"
+        ),
+        epilog=(
+            "前置：$MUSIC_ASSETS_ROOT/scores/ 下须有 openscore-lieder/ 与\n"
+            "openscore-stringquartets/ 两库（缺库将中文报错并以 exit 1 退出，不执行转换）；\n"
+            "产物 MIDI 落 --out（默认 scores/openscore-midi/），逐件清单落\n"
+            "out/openscore_midi_inventory.json（--dry-run 不写任何文件）。"
+        ),
+    )
+    p.add_argument("--limit", type=_positive_int, metavar="N",
+                   help="只批转前 N 件（跨库按库名序×路径序截取，试跑用；默认全量）")
+    p.add_argument("--dry-run", action="store_true",
+                   help="只列出将处理的文件与目标 MIDI 路径；不解析、不写盘、不写清单")
+    p.add_argument("--out", metavar="DIR", default=None,
+                   help="覆盖 MIDI 输出根目录（默认资产根下 scores/openscore-midi/）")
+    return p.parse_args(argv)
+
+
+def main(argv=None):
+    if argv and argv[0].endswith(".py"):     # 兼容旧式 main(sys.argv) 传参
+        argv = argv[1:]
+    args = _parse_args(argv)
+    scores_root, libs, default_out = _score_paths()
+    args.out = args.out if args.out is not None else default_out
+
+    missing = [f"{lib} -> {root}" for lib, root in sorted(libs.items())
+               if not os.path.isdir(root)]
+    if missing:
+        print("错误：openscore 乐谱库目录缺失，未执行任何转换：", file=sys.stderr)
+        for m in missing:
+            print(f"  {m}", file=sys.stderr)
+        print("请核对 $MUSIC_ASSETS_ROOT/scores/ 布局（可运行 bgm doctor 体检）。",
+              file=sys.stderr)
+        return 1
+    enumerated = _enumerate_libs(libs)
+    total = sum(len(fs) for fs in enumerated.values())
+    if total == 0:
+        print(f"错误：两库目录存在但未发现任何 .mxl 文件（{scores_root}），未执行转换。",
+              file=sys.stderr)
+        return 1
+    n_sel = min(args.limit, total) if args.limit else total
+    lib_desc = " + ".join(f"{lib} {len(enumerated[lib])} 件"
+                          for lib in sorted(enumerated))
+    mode = f"（--limit {args.limit} 试跑）" if args.limit else ""
+    if args.dry_run:
+        mode += "（--dry-run 只列不写）"
+    scale = ("秒级" if n_sel <= 10 else
+             "约 2 分钟量级（历史实测 1584 件）" if n_sel == total else "分钟级以内")
+    print(f"[计划] 将批转 {n_sel}/{total} 件 .mxl（{lib_desc}）{mode}", file=sys.stderr)
+    print(f"[计划] MIDI 输出 -> {args.out}"
+          + ("" if args.dry_run else f"；预计{scale}，Ctrl-C 可中止"),
+          file=sys.stderr)
+
+    if args.dry_run:
+        inv = batch(limit=args.limit, out_root=args.out, libs=libs, dry_run=True)
+        print(f"[dry-run] 共列出 {len(inv)} 件，未写任何文件")
+        return 0
+
+    inv = batch(limit=args.limit, out_root=args.out, libs=libs)
     out_dir = os.path.join(_ROOT, "out")
     os.makedirs(out_dir, exist_ok=True)
     out_json = os.path.join(out_dir, "openscore_midi_inventory.json")
@@ -252,7 +383,15 @@ def main():
     skip = sum(1 for r in inv if r["status"] != "ok")
     print(f"converted {ok} / skipped {skip} / total {len(inv)}")
     print(f"inventory: {out_json}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\n已中止（用户中断）；已写出的件不受影响。", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:  # 绝不裸 traceback：稳定中文提示 + exit 1
+        print(f"错误：{type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(1)
