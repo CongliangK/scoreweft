@@ -1356,8 +1356,9 @@ def edit_split(project_path, tracks_dir="tracks"):
                         desc)
     changed = _diff_dicts(json.loads(before_main), json.loads(after_main))
     for ref in created:
+        blob = _read_bytes(os.path.join(proj_dir, ref))
         changed.append({"path": ref, "before": None,
-                        "after": _read_bytes(os.path.join(proj_dir, ref))})
+                        "after": blob.decode("utf-8") if blob is not None else None})
     return {"verb": "split", "target": project_path, "changed": changed,
             "undo": {"seq": entry["seq"], "desc": desc, "dir": UNDO_DIR}}
 
