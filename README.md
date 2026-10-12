@@ -19,7 +19,7 @@ python3 -m bgm_gen --help                   # 无需个人 bgm 包装脚本
 
 可选批转器/预览脚本的根优先级为 `MUSIC_ASSETS_ROOT` / `MUSIC_SAMPLES_ROOT` 环境变量 → 已有本地 runtime 配置 → 仓库 `assets/` / `assets/samples/`；编目中的 `$MUSIC_ASSETS_ROOT/...`、`$MUSIC_SAMPLES_ROOT/...` 是发布占位，不是可直接传入引擎的文件名。下载需代理时自行设置 `HTTPS_PROXY`，不预设个人代理端口。
 
-核心引擎仍从本地 `bgm_gen/runtime.json` 读取实际路径；新 clone 不含该文件。当前 doctor 校验已有配置，不会自动创建缺失配置；首次需按下列结构在本地配置真实绝对路径（文件已 gitignore，勿提交），再运行 `python3 -m bgm_gen doctor`。doctor 检查完整环境，未启用的 GPU/服务项可能报未就绪，不代表 synth 不可用。以下是结构示意，所有占位必须替换：
+核心引擎仍从本地 `bgm_gen/runtime.json` 读取实际路径；新 clone 不含该文件。当前 doctor 校验已有配置，不会自动创建缺失配置；首次需按下列结构在本地配置真实绝对路径（文件已 gitignore，勿提交）——可直接复制仓库根 [runtime.json.example](<runtime.json.example>)（含逐键 `_comment_*` 说明与获取指引）为 `bgm_gen/runtime.json` 后替换全部占位，再运行 `python3 -m bgm_gen doctor`。doctor 检查完整环境，未启用的 GPU/服务项可能报未就绪，不代表 synth 不可用。以下是结构示意，所有占位必须替换：
 
 ```json
 {
@@ -34,7 +34,13 @@ python3 -m bgm_gen --help                   # 无需个人 bgm 包装脚本
 }
 ```
 
-最小示例先跑 `python3 -m bgm_gen render examples/minimal.json -o out/minimal`；fast/slow/service 跑法与资产前置见 [CONTRIBUTING](<CONTRIBUTING.md>)。
+最小示例先跑 `python3 -m bgm_gen render examples/minimal.json -o out/minimal`；跑测试前先 `python3 tools/make_smoke_specs.py` 重建冒烟前置件（fresh clone 首跑三步顺序见 [测试手册](<bgm_gen/tests/README.md>)）；fast/slow/service 跑法与资产前置见 [CONTRIBUTING](<CONTRIBUTING.md>)。
+
+## 支持环境
+
+实测环境为 **Linux x86-64 + Python 3.13 + numpy 2.5 + FFmpeg 8.1.x / FluidSynth 2.6**。位级基线冻结版本为 FFmpeg **8.1.2** / FluidSynth **2.5.4**；版本漂移时，仅相关位级断言段自动显式 skip，契约与 QC 断言仍执行（见 [测试手册](<bgm_gen/tests/README.md>)「位级基线与冻结外部版本」）。位级复现承诺仅在 **Linux + 钉版本环境**成立，不承诺跨平台或跨外部工具版本字节一致。
+
+**Windows 不支持**：GPU 串行保护依赖 POSIX `fcntl` 文件锁；其它平台未经验证。
 
 ## 快速上手
 
@@ -44,7 +50,7 @@ bgm engines                                   # 引擎清单 + 确定性分级
 bgm catalog                                   # 音色目录（详表见 catalog/timbres.md）
 bgm render examples/minimal.json -o out/try1  # 最小工程端到端：stems→混音→母带→QC
 
-# 测试（fast 档，默认 347 例——2026-10-11 开源整改后口径，预算 ≤90s；12 个显式 skip = 6 分家缺件 + 6 位级版本门（ffmpeg/fluidsynth 漂移，仅位级哈希断言段），见 bgm_gen/tests/README.md）
+# 测试（fast 档，约 376 例；2026-10-12 实测 364 passed / 12 skipped，预算 ≤90s；skip = 6 分家缺件 + 6 位级版本门（ffmpeg/fluidsynth 漂移，仅位级哈希断言段），以当次摘要为准，见 bgm_gen/tests/README.md）
 cd scoreweft  # 进入克隆目录
 python3 -m pytest bgm_gen/tests -q
 ```
@@ -127,7 +133,7 @@ python3 -m pytest bgm_gen/tests -q
 
 ## 仓库初始化与布局（2026-09-09 收编整理）
 
-- **`init.sh`**：新环境（新机 / 新 clone）初始化——依赖自检（python3+numpy、ffmpeg、sox、libfluidsynth）+ 大模型能力开启指引。**ComfyUI AI 引擎 / demucs 等 GPU 大模型能力默认关闭**，init.sh 不会自动启动或配置它们；需要时按其输出提示手动开启（准备本地 runtime.json → 启动 ComfyUI → `bgm doctor` 校验）。`runtime.json` 的唯一写入者仍是 `bgm doctor`（BG-D3），init.sh 不代写。
+- **`init.sh`**：新环境（新机 / 新 clone）初始化——依赖自检（python3+numpy、ffmpeg、sox、libfluidsynth）+ 大模型能力开启指引。**ComfyUI AI 引擎 / demucs 等 GPU 大模型能力默认关闭**，init.sh 不会自动启动或配置它们；需要时按其输出提示手动开启（准备本地 runtime.json → 启动 ComfyUI → `bgm doctor` 校验）。首次手工创建本地配置；`bgm doctor` 当前只校验、不自动创建/改写，init.sh 亦不代写。
 - 确定性引擎（synth/sf2/sfz/sample/master-loudnorm）不依赖大模型，但仍须各自的外部工具、音色及本地配置就绪。
 
 ## 许可证与音色获取

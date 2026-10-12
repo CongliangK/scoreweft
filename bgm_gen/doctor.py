@@ -1,10 +1,10 @@
 """doctor：环境探测/校验（BG-D3）。
 
-runtime.json 的唯一写入者是本模块（探测逻辑）；引擎只读。
-R1 收尾由主线生成 runtime.json；本模块负责校验与报告。
+runtime.json 首次由使用者手工建档；本模块只校验与报告，当前不自动创建/改写。
+引擎只读（BG-D3）；R1 收尾由主线生成 runtime.json。
 
 呈现层（R4，2026-08-22）：
-    doctor_report()      探测/校验逻辑——R1 起冻结，不动。
+    doctor_report()      探测/校验逻辑（含运行时配置健壮性检查）。
     python3 bgm_gen/doctor.py          默认人读绿红表（逐项 ✓/✗ + 明细 + 可选档标注）。
     python3 bgm_gen/doctor.py --json   原 JSON 输出（与 doctor_report() 逐字段一致）。
     python3 -m bgm_gen doctor          cli.py 冻结路径，仍输出 JSON（机器可读不回退）。
@@ -30,6 +30,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)          # 仓库根（脚本直跑模式的 import 基准）
 RUNTIME_PATH = os.path.join(HERE, "runtime.json")
+EXAMPLE_PATH = os.path.join(ROOT, "runtime.json.example")
 DESCRIPTORS_DIR = os.path.join(HERE, "engines", "descriptors")
 
 if ROOT not in sys.path:              # 直跑 python3 bgm_gen/doctor.py 亦可 import 包
@@ -256,9 +257,97 @@ def _check_fluidsynth_lib(val):
                    "tools.fluidsynth_lib 填 so/DLL 全路径")
 
 
+def _missing_runtime_detail():
+    """runtime.json 缺失时的稳定指引（缺什么/为什么/怎么办）。
+
+    输出/退出码/schema 均不变：仍走标准 report 结构（单条 error 项 →
+    ok=False → exit 1），只是 detail 从裸 FileNotFoundError traceback
+    变为可操作文案——指向仓库根 runtime.json.example 模板与 README
+    安装节，并列出必填键（与 README「安装」节结构示意同口径）。
+    """
+    return (
+        "缺 bgm_gen/runtime.json——doctor 与各引擎靠它读取本机绝对路径"
+        "（解释器/外部工具/SoundFont/服务地址），新 clone 不含该文件。"
+        f"办法：复制仓库根 runtime.json.example（{EXAMPLE_PATH}）为 "
+        "bgm_gen/runtime.json，替换全部 <…> 占位为本机真实绝对路径"
+        "（该文件已 gitignore，勿提交）；结构说明见 README.md「安装」节。"
+        "必填键：python_system、assets_root、samples_root、"
+        "tools.{ffmpeg, fluidsynth_cli, fluidsynth_lib, sfizz_render}、"
+        "sf2.{FluidR3_GM, GeneralUser_GS}、demucs.python、"
+        "demucs.env.HF_HOME、matchering.python、comfyui.base_url。"
+    )
+
+
+def _runtime_error_report(detail):
+    """装载失败也走标准单条 error schema，不泄漏裸栈。"""
+    return {"ok": False, "items": [{
+        "name": "runtime.json", "ok": False, "detail": detail,
+        "optional": False, "severity": "error"}]}
+
+
+def _check_runtime_paths(item, rt):
+    """只追加失败诊断；返回类型是否有效，防止坏值进入后续路径/探针 API。"""
+    paths = {key: rt[key] for key in
+             ("python_system", "python_torch", "samples_root", "assets_root")
+             if key in rt}
+    for group in ("tools", "sf2"):
+        paths.update((f"{group}.{key}", val)
+                     for key, val in (rt.get(group) or {}).items())
+    for engine in ("demucs", "matchering"):
+        config = rt.get(engine) or {}
+        if "python" in config:
+            paths[f"{engine}.python"] = config["python"]
+    env = ((rt.get("demucs") or {}).get("env") or {})
+    if "HF_HOME" in env:
+        paths["demucs.env.HF_HOME"] = env["HF_HOME"]
+
+    invalid = {key for key, val in paths.items() if not isinstance(val, str)}
+    placeholders = {key for key, val in paths.items()
+                    if isinstance(val, str) and re.fullmatch(r"<[^/<>]*>", val.strip())}
+    for key, val in paths.items():
+        if key in invalid:
+            item(f"runtime.{key}", False, f"类型错误：{key} 应为字符串路径")
+        elif key in placeholders:
+            item(f"runtime.{key}", False, f"占位未替换：{key}（{val}）")
+
+    for engine in ("demucs", "matchering"):
+        key = f"{engine}.python"
+        py = paths.get(key)
+        if (isinstance(py, str) and py and key not in placeholders
+                and not os.path.isfile(os.path.expanduser(py))):
+            item(f"runtime.{key}", False, f"解释器路径不存在：{key}（{py}）")
+    hf_home = paths.get("demucs.env.HF_HOME")
+    if (isinstance(hf_home, str) and hf_home
+            and "demucs.env.HF_HOME" not in placeholders
+            and not os.path.isdir(os.path.expanduser(hf_home))):
+        item("runtime.demucs.env.HF_HOME", False,
+             f"HF_HOME 目录不存在：demucs.env.HF_HOME（{hf_home}）", severity="warn")
+    return not invalid
+
+
+def _configure_output_streams():
+    """CLI 共用 doctor_report 的出口：固定 UTF-8，保 JSON（包括非 BMP）可解析。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, OSError, ValueError):
+            pass  # 捕获流/已关闭流可能没有 reconfigure，不能掩盖体检结果。
+
+
 def doctor_report():
-    with open(RUNTIME_PATH) as f:
-        rt = json.load(f)
+    # bgm doctor 不走本模块 main，而在 cli.py 中打印报告；此处覆盖两条入口。
+    _configure_output_streams()
+    try:
+        with open(RUNTIME_PATH, encoding="utf-8") as f:
+            rt = json.load(f)
+        if not isinstance(rt, dict):
+            raise ValueError(f"顶层须为 JSON 对象（dict），实际为 {type(rt).__name__}")
+    except FileNotFoundError:
+        return _runtime_error_report(_missing_runtime_detail())
+    except (OSError, ValueError, UnicodeError) as e:
+        return _runtime_error_report(
+            f"runtime.json 解析失败：{e}。办法：重新自仓库根 runtime.json.example "
+            "复制为 bgm_gen/runtime.json，替换全部 <…> 占位后重试（勿提交本机配置）。")
     report = {"ok": True, "items": []}
 
     def item(name, ok, detail="", optional=False, severity="error"):
@@ -268,6 +357,9 @@ def doctor_report():
                                 "optional": optional, "severity": severity})
         if not ok and not optional and severity == "error":
             report["ok"] = False
+
+    if not _check_runtime_paths(item, rt):
+        return report  # schema 错误不再传给 expanduser/ctypes/二进制探针。
 
     for key, val in rt.get("tools", {}).items():
         if key == "fluidsynth_lib":
@@ -330,6 +422,7 @@ def pretty_report(report):
 
 
 def main(argv=None):
+    _configure_output_streams()
     p = argparse.ArgumentParser(
         prog="doctor", description="bgm 环境体检（默认人读绿红表；--json 输出机器可读 JSON）")
     p.add_argument("--json", action="store_true", help="输出原 JSON（与 doctor_report() 一致）")

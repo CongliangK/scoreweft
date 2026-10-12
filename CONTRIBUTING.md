@@ -10,11 +10,13 @@ python3 -m pytest bgm_gen/tests -q -m slow     # GPU/外部工具较慢冒烟
 python3 -m pytest bgm_gen/tests -q -m service  # ComfyUI 本地服务
 ```
 
-服务不可达、已迁走项目缺件的显式 skip 必须计数披露，不能静默算通过。默认 fast 仍需要本地资产、ffmpeg/FluidSynth/sfizz 与运行配置，不是无资产 CI。`-m ""` 不表示全量；全量用 `-m "fast or slow or service"`。最小工程位级锚点未就绪时先运行 `python3 -m bgm_gen render examples/minimal.json -o out/minimal`。详情见 [测试手册](<bgm_gen/tests/README.md>)。
+服务不可达、已迁走项目缺件的显式 skip 必须计数披露，不能静默算通过。默认 fast 仍需要本地资产、ffmpeg/FluidSynth/sfizz 与运行配置，不是无资产 CI。`-m ""` 不表示全量；全量用 `-m "fast or slow or service"`。
+
+**fresh clone 首跑前置（顺序固定）**：冒烟 spec 与 demucs/master 输入、minimal 位级锚点均 gitignored，先 ①`python3 tools/make_smoke_specs.py`（重建 8 份基线 spec + 两件输入 wav，缺资产时逐条给出补齐指引）→ ②`python3 -m bgm_gen render examples/minimal.json -o out/minimal` → ③pytest。详情见 [测试手册](<bgm_gen/tests/README.md>)「fresh clone 首跑前置」。
 
 ## 确定性与接口纪律
 
-- 确定性引擎同 spec/固定工具版本逐位复现；并行必须与顺序逐位相等；GPU 容差与非确定性引擎按自身分级验收，不承诺 seed 即位级相等。
+- 位级复现承诺仅在 Linux + 钉版本环境成立（FFmpeg 8.1.2 / FluidSynth 2.5.4）；实测支持环境及 Windows 不支持的原因见 [README「支持环境」](<README.md#支持环境>)。确定性引擎同 spec/固定工具版本逐位复现；并行必须与顺序逐位相等；GPU 容差与非确定性引擎按自身分级验收，不承诺 seed 即位级相等。
 - BG-D5：spec 声明的 sr/channels 权威，stem 强制归一；避免改变无新字段工程的旧字节路径。不要修改基线、降低断言或补 skip 来掩盖回归。
 - envelope + payload 为引擎契约，参数/事件能力来自描述符；升级需 pin、行为探针、doctor 与描述符 diff 一致。插件五步法见 [引擎开发契约](<bgm_gen/engines/README.md>)。
 - 修改音色编目后重新 `python3 -m bgm_gen catalog --write`；发布副本路径占位化、实时扫描仍用本地真实路径，同步测试除路径占位和日期外精确比较全部数据。

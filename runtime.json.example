@@ -1,0 +1,55 @@
+{
+  "_comment": "Scoreweft 本机运行时配置模板（真实键集）。用法：复制本文件为 bgm_gen/runtime.json，并把全部 \"<…>\" 占位替换为本机真实值（路径一律绝对路径，勿用 ~ 或相对路径）。bgm_gen/runtime.json 已被 .gitignore 忽略，属本机私有配置，勿提交。本模板为首次手工建档起点；doctor 校验既有配置（当前不自动创建/改写本文件）；逐键说明见各 _comment_* 键，安装总览见 README.md「安装」节。注意：_comment_* 说明键只放在顶层——doctor 会遍历 tools/sf2 子表逐键出体检行，子表内不要加说明键。",
+  "spec_version": 1,
+  "_comment_spec_version": "配置格式版本，固定 1，勿改。",
+  "generated": "<建档日期，如 2026-10-11>",
+  "_comment_generated": "手工记录的建档/最近校验日期，doctor 不自动更新；纯记录字段，不参与校验。",
+  "note": "<自由文本：本机配置来源说明>",
+  "assets_root": "<大资产根绝对路径>",
+  "_comment_assets_root": "大资产根（sfz 音色库、demucs 权重、sfizz 等工具真身所在）。本机开发布局=$MUSIC_ASSETS_ROOT 环境变量所指目录；只用仓库内音色库的最小安装可填 <本仓库>/assets。各引擎实际取哪一级子目录见 bgm_gen/assets.json manifest。",
+  "samples_root": "<one-shot 采样根绝对路径>",
+  "_comment_samples_root": "sample 引擎的相对采样根（Kenney 等 one-shot wav/ogg）。上游跨项目资产库=$MUSIC_SAMPLES_ROOT 环境变量所指目录；仓库内置采样在 <本仓库>/assets/samples。sample 轨 instrument 写的相对路径即以此根解析（doctor 校验存在性）。",
+  "samples_root_note": "<自由文本：采样根来源备注（可选）>",
+  "python_system": "<含 numpy 的 python3 绝对路径>",
+  "_comment_python_system": "基础解释器（synth/sample 等纯本地引擎用）。找法：`command -v python3` 后 `python3 -c 'import numpy'` 验证——numpy 必须可用（AGENTS 约定 miniconda base，系统 /usr/bin/python3 常缺 numpy）。",
+  "python_system_note": "<自由文本：基础解释器备注（可选）>",
+  "python_torch": "<含 torch 的独立环境 python 绝对路径>",
+  "_comment_python_torch": "GPU/重依赖解释器（demucs/matchering 子进程共用）。找法：ComfyUI 安装所用的 python 环境（如 conda env）里的 python 可执行文件，`python -c 'import torch'` 验证。不用 GPU 档可先保留占位，doctor 会以未就绪报红，不影响 synth 基础引擎。",
+  "tools": {
+    "sfizz_render": "<sfizz_render 可执行文件（或其 .sh 包装）绝对路径>",
+    "fluidsynth_cli": "fluidsynth",
+    "lmms": "<lmms 绝对路径，未装可删本键>",
+    "ffmpeg": "ffmpeg",
+    "sox": "sox",
+    "fluidsynth_lib": "libfluidsynth.so.3"
+  },
+  "_comment_tools": "外部工具表，doctor 逐键出体检行（存在性/PATH 可达）。ffmpeg/fluidsynth/sox 走 PATH 名即可；sfizz_render 官方发行不进 PATH，须绝对路径（找法：sfizz release 包内的 sfizz_render 或其包装脚本，见 README「安装」节 sfizz 链接）。fluidsynth_lib 填 so/DLL 的 soname 或全路径（找法：`ldconfig -p | grep fluidsynth`；填错会致 sf2 引擎 ctypes 装载失败）。lmms 为可选档，未装删除该键即可。",
+  "comfyui": {
+    "base_url": "http://127.0.0.1:8188"
+  },
+  "_comment_comfyui": "ai 引擎（ComfyUI 工作流）本地服务地址，按 ComfyUI 官方说明启动后填其监听地址（默认 127.0.0.1:8188）。不用 AI 档保留默认即可，doctor 会报未就绪但不影响其它引擎。",
+  "demucs": {
+    "python": "<demucs 所在独立环境 python 绝对路径>",
+    "env": {"HF_HOME": "<模型权重缓存目录绝对路径>"}
+  },
+  "_comment_demucs": "分轨引擎 demucs。python 通常与 python_torch 同一环境；env.HF_HOME 指向 huggingface 权重缓存目录（如 <大资产根>/models/hf）——必填，防 demucs 静默回退下载旧格式权重（坑表 W1B）。",
+  "matchering": {
+    "python": "<matchering 所在独立环境 python 绝对路径>"
+  },
+  "_comment_matchering": "母带 matchering 路径的解释器，通常与 demucs.python 同一环境。未配置则 master 链走 ffmpeg loudnorm。",
+  "diffrhythm": {
+    "installed": false,
+    "note": "<可选档说明，如：未装>"
+  },
+  "_comment_diffrhythm": "可选引擎档开关（BG-D10 用户裁定后才装）：未装保持 installed=false，doctor 以可选档口径展示。",
+  "sf2": {
+    "FluidR3_GM": "<FluidR3_GM.sf2 绝对路径>",
+    "GeneralUser_GS": "<GeneralUser_GS.sf2 绝对路径>"
+  },
+  "_comment_sf2": "SoundFont 表：键名=工程 instrument 引用名（如 \"FluidR3_GM:0:48\" 冒号前段），值=.sf2 文件绝对路径。FluidR3_GM 常见于系统包 soundfonts 目录（如 /usr/share/soundfonts/）；GeneralUser_GS 需自行下载（获取方式与许可证见 NOTICE 与 catalog/）。doctor 逐键校验存在性。",
+  "gpu": {
+    "vram_total_mb": "<显存总量整数 MB，如 16376>",
+    "serial_guard": "<自由文本：GPU 串行保护说明>"
+  },
+  "_comment_gpu": "GPU 信息记录（BG-D8 串行保护）：vram_total_mb 找法=`nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits`（无 NVIDIA GPU 可删整节）；serial_guard 纯说明字段。"
+}
