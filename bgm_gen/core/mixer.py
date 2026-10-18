@@ -2,7 +2,7 @@
 
 三段式设计（为逐位确定性，2026-08-22 R3 实测拍板）：
     A. 每轨单输入 ffmpeg 链 → stems/<track>.bus.wav（float32）：
-       adelay（clip 窗平移）→ volume(静态 gain_db) → gain_db/pan 自动化
+       atrim（局部 clip 窗）→ adelay（clip 窗平移）→ volume(静态 gain_db) → gain_db/pan 自动化
        → pan（静态）→ bus 滤镜直传 → apad+atrim（BG-D5：补零/截断到工程
        时长）；lowpass_hz 自动化随后由 numpy 扫描原地施加。
     A'. 空间化级（v3.2 空间化轮）：轨 space 声明 → 深度模型（预延迟/电平/
@@ -140,11 +140,17 @@ def _render_track_chain(proj, plan, t, idx, stems_dir):
     spb, sr, ch = plan["spb"], proj["meta"]["sr"], proj["meta"]["channels"]
     dur = plan["duration_s"]
     end_sample = int(round(dur * sr))
+    start_sample = int(round(t["start_s"] * sr))
+    clip_end_sample = int(round(t["end_s"] * sr))
 
     src = os.path.join(stems_dir, f"{t['name']}.{t['engine']}.wav")
-    fl = []
-    if t["start_s"] > 0:
-        fl.append(f"adelay=delays={int(round(t['start_s'] * 1000))}:all=1")
+    # BG-D5/BG-D7：先截源 stem 到局部 clip 窗，再平移到全局时间线。
+    # 两端独立落到工程样本网格，避免毫秒延迟及窗长独立取整造成越界。
+    # 在 bus/space 前截源，保留显式效果尾音；原始 stem/增量缓存不改写。
+    fl = [f"atrim=end_sample={clip_end_sample - start_sample}",
+          "asetpts=PTS-STARTPTS"]
+    if start_sample > 0:
+        fl.append(f"adelay=delays={start_sample}S:all=1")
     if abs(t["gain_db"]) > 1e-9:
         fl.append(f"volume={10 ** (t['gain_db'] / 20):.6f}")
     if "gain_db" in autos:
@@ -157,7 +163,8 @@ def _render_track_chain(proj, plan, t, idx, stems_dir):
     # lowpass_hz 自动化不在链内做（asendcmd 拉链噪声，见模块 docstring），
     # 由 mix_project 在链渲染后调 _apply_lowpass_sweep 原地施加。
     fl += list(t["bus"])
-    fl += [f"apad=whole_dur={dur:.6f}",
+    # 与末端裁切共用样本数；whole_dur 的微秒取整可能少补一帧。
+    fl += [f"apad=whole_len={end_sample}",
            f"atrim=end_sample={end_sample},asetpts=PTS-STARTPTS"]
 
     out = os.path.join(stems_dir, f"{t['name']}.bus.wav")
